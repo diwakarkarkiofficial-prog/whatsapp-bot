@@ -1,0 +1,7 @@
+
+
+flask
+twilio
+requests
+gunicorn
+git push -u origin main
