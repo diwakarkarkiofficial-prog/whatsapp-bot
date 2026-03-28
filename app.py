@@ -49,7 +49,7 @@ BUSINESS_CONFIGS = {
         "pricing": "Minimum Rs 1700 depending on therapist and requirements",
         "booking": "Call or WhatsApp us",
         "contact": "+918510831097",
-        "owner_number": "whatsapp:+918510831097"
+        "owner_number": "whatsapp:+918167042585"
     },
     "sibling": {
         "name": "Personal Sibling",
@@ -62,7 +62,7 @@ BUSINESS_CONFIGS = {
         "pricing": "1 hug and 30 minutes time spent together",
         "booking": "Call or WhatsApp us",
         "contact": "+918796021321",
-        "owner_number": "whatsapp:+918796021321"
+        "owner_number": "whatsapp:+918167042585"
     },
     "default": {
         "name": "Demo Business",
