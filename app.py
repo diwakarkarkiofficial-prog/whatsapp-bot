@@ -74,7 +74,7 @@ BUSINESS_CONFIGS = {
         "pricing": "Contact us for pricing",
         "booking": "Call or WhatsApp us",
         "contact": "+9199999 99999",
-        "owner_number": None
+        "owner_number": "+918167042585"
     }
 }
 
