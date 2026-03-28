@@ -12,10 +12,11 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_FROM = "whatsapp:+14155238886"
-
 IST = pytz.timezone("Asia/Kolkata")
 
 conversation_history = {}
+greeted_numbers = set()
+message_counts = {}
 
 NUMBER_TO_BUSINESS = {
     "whatsapp:+919266711535": "aura_salon",
@@ -35,7 +36,7 @@ BUSINESS_CONFIGS = {
         "pricing": "Haircut from Rs 300, Colour from Rs 800, Bridal packages from Rs 5000",
         "booking": "Call us or visit directly",
         "contact": "+919266711535",
-        "owner_number": "whatsapp:+918167042585"
+        "owner_number": "whatsapp:+91OWNERNUMBER"
     },
     "metamind": {
         "name": "Metamind",
@@ -74,47 +75,50 @@ BUSINESS_CONFIGS = {
         "pricing": "Contact us for pricing",
         "booking": "Call or WhatsApp us",
         "contact": "+9199999 99999",
-        "owner_number": "+918167042585"
+        "owner_number": "whatsapp:+918167042585"
     }
 }
 
 def is_business_open(config):
     now = datetime.now(IST)
-    current_hour = now.hour
-    current_day = now.weekday()
-    if current_day in config.get("closed_days", []):
+    if now.weekday() in config.get("closed_days", []):
         return False
-    if current_hour >= config["open_hour"] and current_hour < config["close_hour"]:
-        return True
-    return False
+    return config["open_hour"] <= now.hour < config["close_hour"]
 
-def get_system_prompt(config, is_open):
-    status = "You are currently available to assist customers." if is_open else f"The business is currently closed. Working hours are {config['hours']}. Let the customer know politely and tell them when you will be open. Still answer basic questions about services and pricing."
-    return f"""You are a helpful WhatsApp assistant for {config['name']}.
+def get_system_prompt(config):
+    is_open = is_business_open(config)
+    now = datetime.now(IST)
+    time_str = now.strftime("%I:%M %p")
+    
+    if is_open:
+        status = "The business is currently OPEN."
+    else:
+        status = f"The business is currently CLOSED. It is {time_str} IST. Working hours are {config['hours']}. Politely inform the customer and tell them when to reach out."
 
-Business Information:
-- Working Hours: {config['hours']}
+    return f"""You are a friendly WhatsApp assistant for {config['name']}.
+
+Business Info:
+- Hours: {config['hours']}
 - Location: {config['location']}
 - Services: {config['services']}
 - Pricing: {config['pricing']}
 - Booking: {config['booking']}
 - Contact: {config['contact']}
 
-Current Status: {status}
+Status: {status}
 
 Rules:
-- Keep all replies under 60 words
-- Be friendly, warm and professional
-- If asked something you don't know, say: Please contact us directly at {config['contact']}
-- Never make up information
+- Keep replies under 60 words
+- Be warm, friendly and conversational
+- Never use bullet points in replies
 - Reply in the same language the customer uses
-- Don't use bullet points, keep it conversational
-- Remember the full conversation context when answering"""
+- If you don't know something, say: Please contact us directly at {config['contact']}
+- Never make up information
+- Remember the full conversation when answering
+- If customer seems angry or frustrated, apologize sincerely and offer to connect them with the team
+- If customer asks to speak to a human, give them the contact number immediately"""
 
 def ask_groq(from_number, message, config):
-    is_open = is_business_open(config)
-    system_prompt = get_system_prompt(config, is_open)
-
     if from_number not in conversation_history:
         conversation_history[from_number] = []
 
@@ -126,7 +130,7 @@ def ask_groq(from_number, message, config):
     if len(conversation_history[from_number]) > 20:
         conversation_history[from_number] = conversation_history[from_number][-20:]
 
-    messages = [{"role": "system", "content": system_prompt}] + conversation_history[from_number]
+    messages = [{"role": "system", "content": get_system_prompt(config)}] + conversation_history[from_number]
 
     try:
         response = requests.post(
@@ -150,7 +154,8 @@ def ask_groq(from_number, message, config):
         })
         return reply
     except Exception as e:
-        return f"Sorry, I'm having trouble right now. Please contact us directly at {config['contact']}"
+        print(f"Groq error: {e}")
+        return f"Sorry, I'm having a technical issue. Please contact us directly at {config['contact']}"
 
 def notify_owner(config, from_number, customer_message, bot_reply):
     if not config.get("owner_number") or not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
@@ -165,45 +170,36 @@ def notify_owner(config, from_number, customer_message, bot_reply):
     except Exception as e:
         print(f"Owner notification failed: {e}")
 
-def get_greeting(config):
-    is_open = is_business_open(config)
-    if is_open:
-        return f"Hi! Welcome to {config['name']}. How can I help you today?"
-    else:
-        return f"Hi! Welcome to {config['name']}. We're currently closed but our hours are {config['hours']}. How can I help you?"
-
-greeted_numbers = set()
+def is_escalation_needed(message):
+    triggers = ["speak to human", "real person", "manager", "speak to someone",
+                "not helpful", "useless", "terrible", "worst", "angry",
+                "complaint", "refund", "legal", "sue", "baat karo", "insaan se baat"]
+    return any(trigger in message.lower() for trigger in triggers)
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     incoming_msg = request.form.get("Body", "").strip()
     from_number = request.form.get("From", "")
 
-    if not incoming_msg or len(incoming_msg.strip()) == 0:
-        resp = MessagingResponse()
-        return str(resp)
+    if not incoming_msg:
+        return str(MessagingResponse())
 
     business_key = NUMBER_TO_BUSINESS.get(from_number, "default")
     config = BUSINESS_CONFIGS.get(business_key)
 
+    message_counts[from_number] = message_counts.get(from_number, 0) + 1
+
     resp = MessagingResponse()
+
+    if is_escalation_needed(incoming_msg):
+        reply = f"I completely understand your concern. Please contact our team directly at {config['contact']} and they'll sort this out for you right away."
+        resp.message(reply)
+        notify_owner(config, from_number, f"URGENT - Customer needs human: {incoming_msg}", reply)
+        return str(resp)
 
     if from_number not in greeted_numbers:
         greeted_numbers.add(from_number)
-        greeting = get_greeting(config)
-        resp.message(greeting)
-        conversation_history[from_number] = [{
-            "role": "assistant",
-            "content": greeting
-        }]
-        conversation_history[from_number].append({
-            "role": "user",
-            "content": incoming_msg
-        })
-        ai_reply = ask_groq(from_number, incoming_msg, config)
-        resp.message(ai_reply)
-        notify_owner(config, from_number, incoming_msg, ai_reply)
-        return str(resp)
+        conversation_history[from_number] = []
 
     ai_reply = ask_groq(from_number, incoming_msg, config)
     resp.message(ai_reply)
