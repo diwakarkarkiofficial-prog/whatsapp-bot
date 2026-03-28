@@ -35,7 +35,7 @@ BUSINESS_CONFIGS = {
         "pricing": "Haircut from Rs 300, Colour from Rs 800, Bridal packages from Rs 5000",
         "booking": "Call us or visit directly",
         "contact": "+919266711535",
-        "owner_number": "whatsapp:+91OWNERNUMBER"
+        "owner_number": "whatsapp:+918167042585"
     },
     "metamind": {
         "name": "Metamind",
@@ -179,9 +179,9 @@ def webhook():
     incoming_msg = request.form.get("Body", "").strip()
     from_number = request.form.get("From", "")
 
-    if not incoming_msg:
-        resp = MessagingResponse()
-        return str(resp)
+  if not incoming_msg or len(incoming_msg.strip()) == 0:
+    resp = MessagingResponse()
+    return str(resp)
 
     business_key = NUMBER_TO_BUSINESS.get(from_number, "default")
     config = BUSINESS_CONFIGS.get(business_key)
