@@ -179,9 +179,9 @@ def webhook():
     incoming_msg = request.form.get("Body", "").strip()
     from_number = request.form.get("From", "")
 
-  if not incoming_msg or len(incoming_msg.strip()) == 0:
-    resp = MessagingResponse()
-    return str(resp)
+    if not incoming_msg or len(incoming_msg.strip()) == 0:
+        resp = MessagingResponse()
+        return str(resp)
 
     business_key = NUMBER_TO_BUSINESS.get(from_number, "default")
     config = BUSINESS_CONFIGS.get(business_key)
